@@ -1,0 +1,8 @@
+{
+  "host": "localhost",
+  "port": 6666,
+  "username": "AgentBot",
+  "version": false,
+  "logPath": "./logs/gamestate.jsonl",
+  "loopIntervalMs": 3000
+}
