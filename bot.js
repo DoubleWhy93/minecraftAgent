@@ -3,6 +3,9 @@ const { pathfinder, Movements } = require('mineflayer-pathfinder')
 const { mineflayer: mineflayerViewer } = require('prismarine-viewer')
 const config = require('./config.json')
 const loop = require('./core/loop')
+const { initConsoleCapture } = require('./core/logger')
+
+initConsoleCapture(config.logPath)
 
 const bot = mineflayer.createBot({
   host: config.host,
@@ -16,6 +19,11 @@ bot.loadPlugin(pathfinder)
 bot.once('spawn', () => {
   const mcData = require('minecraft-data')(bot.version)
   const movements = new Movements(bot, mcData)
+  // Allow the pathfinder to drop up to 20 blocks in one move so it can
+  // navigate from a tree canopy (y≈82) down to the forest floor (y≈64).
+  // The default of 4 means any gap larger than 4 blocks — common between the
+  // bottom of a spruce canopy and the ground — returns 'noPath'.
+  movements.maxDropDown = 20
   bot.pathfinder.setMovements(movements)
 
   mineflayerViewer(bot, { port: 3007, firstPerson: false })

@@ -49,8 +49,13 @@ async function explore(bot) {
   const dist = 16 + Math.random() * 32
   const tx = Math.floor(bot.entity.position.x + Math.cos(angle) * dist)
   const tz = Math.floor(bot.entity.position.z + Math.sin(angle) * dist)
+  // When above y=75 (tree canopy), aim for ground level rather than the same
+  // altitude — the same-level target is inside the canopy and unreachable.
+  const inCanopy = bot.entity.position.y > 75
+  const targetY = inCanopy ? 64 : bot.entity.position.y
+  const range = inCanopy ? 8 : 3
   try {
-    await bot.pathfinder.goto(new goals.GoalNear(tx, bot.entity.position.y, tz, 3))
+    await bot.pathfinder.goto(new goals.GoalNear(tx, targetY, tz, range))
   } catch (_) {}
 }
 

@@ -101,11 +101,13 @@ async function unstick(bot) {
   const dist = 16 + Math.random() * 16
   const tx = Math.floor(pos.x + Math.cos(angle) * dist)
   const tz = Math.floor(pos.z + Math.sin(angle) * dist)
-  // When underground, aim upward so the pathfinder can find a surface route
-  const ty = pos.y < 70 ? Math.floor(pos.y + 30) : Math.floor(pos.y)
+  // Underground: aim upward. Tree canopy (y > 75): aim for ground level so the
+  // pathfinder targets reachable open air rather than the inside of the canopy.
+  const ty = pos.y < 70 ? Math.floor(pos.y + 30) : pos.y > 75 ? 64 : Math.floor(pos.y)
+  const range = pos.y > 75 ? 8 : 3
 
   try {
-    await bot.pathfinder.goto(new GoalNear(tx, ty, tz, 3))
+    await bot.pathfinder.goto(new GoalNear(tx, ty, tz, range))
   } catch (_) {}
 }
 

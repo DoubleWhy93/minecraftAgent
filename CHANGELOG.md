@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-03-27 (session 6)
+
+### bot.js — Raise pathfinder maxDropDown from 4 to 20 (critical)
+**Problem:** `movements.maxDropDown = 4` (the library default) is the root cause of the permanent tree-canopy stuck loop. When the bot respawns at the world spawn point (y≈82, inside a spruce canopy), the pathfinder's `getMoveDropDown` function calls `getLandingBlock` to find a solid surface below each candidate step. The gap between the bottom of a spruce canopy and the forest floor is 14–18 blocks, far exceeding the 4-block limit. The pathfinder therefore cannot generate any valid "step sideways and fall" moves. Combined with an empty inventory (bot just died, no blocks to scaffold with), there are literally zero valid moves from the canopy top — the A* exhausts the entire reachable set and returns `status: 'noPath'`. This produces the `"No path to the goal!"` error that appears once per tick, every tick, until the bot is killed by mobs. Confirmed in logs: 1,000+ consecutive identical entries at `{x:-101, y:82, z:-213}`, empty inventory, all attempts returning "No path to the goal!".
+**Fix:** Set `movements.maxDropDown = 20` immediately after constructing `Movements`. This allows the pathfinder to plan a "step off canopy edge → fall 14+ blocks → land on ground" move, which is the only valid escape route. The bot may take ~5 hearts of fall damage on the first drop, but it survives (full 10 hearts), escapes the canopy, and can then gather wood and heal normally.
+
+---
+
+### core/loop.js — Fix unstick GoalNear target when trapped in tree canopy
+**Problem:** The `unstick` function's random-walk target was computed as `ty = Math.floor(pos.y)` when `pos.y >= 70`. At y=82 (tree canopy), this sends `GoalNear(tx, 82, tz, 3)` — a point inside another section of the canopy that is also unreachable (for the same maxDropDown reason). Unstick fired three times in the logs but each time pathfinding immediately failed, so the bot was not displaced at all.
+**Fix:** When `pos.y > 75`, set `ty = 64` (forest floor level) and increase the acceptance radius to 8. The pathfinder now targets open ground instead of another canopy section, so the descent path found by the maxDropDown fix actually leads somewhere useful. The underground case (`pos.y < 70`) is unchanged.
+
+---
+
+### behaviors/gather.js — Fix explore() GoalNear target when above ground
+**Problem:** `explore()` also used `GoalNear(tx, bot.entity.position.y, tz, 3)` at the same altitude as the bot. Called as the error fallback in `gatherWood` after every "No path to the goal!", it produced exactly the same failure — same height target, same noPath result. This meant neither the wood-mining path nor the explore fallback could ever succeed from the canopy.
+**Fix:** When `bot.entity.position.y > 75`, `explore` now targets `y=64` with radius 8 instead of the bot's current altitude with radius 3. After the maxDropDown fix allows the pathfinder to plan a descent, this ensures the explore fallback actively guides the bot toward the forest floor rather than deeper into the canopy.
+
+---
+
 ## 2026-03-27 (session 5)
 
 ### behaviors/gather.js — Fix `isCave` false positive inside tree canopy (critical)
