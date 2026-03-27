@@ -1,5 +1,36 @@
 # Changelog
 
+## 2026-03-27 (session 9)
+
+### core/loop.js — Abort `bot.dig()` when health drops (critical)
+**Problem:** The health event handler called `bot.pathfinder.stop()` but never interrupted an active `bot.dig()` call. A bare-hand log chop takes 6–7 seconds; `exitCanopy`'s dig loop can run for 10+ seconds. During either, a mob attacks every ~1 second while `running = true` prevents any other tick from starting — survival cannot respond. The bot can drop from 10 HP to 0 while digging a spruce log with bare hands and the survival check never fires. This is the mechanism behind the observed death at y=74: the bot was in `exitCanopy`'s dig loop when the mob hit it repeatedly.
+**Fix:** Added `try { bot.stopDigging() } catch (_) {}` alongside the existing `pathfinder.stop()` in the health event handler. When health ≤ 8, the in-progress `bot.dig()` promise rejects immediately, propagating out of `mineBlock` / `exitCanopy` via their `catch` blocks, causing `gather.act()` to return. The loop's post-behavior survival check then runs within the same tick.
+**Strategy:** Make every long-running operation responsive to health events. `pathfinder.stop()` already covered navigation; this extends that to block-breaking, closing the last gap where the tick could be blocked for multiple seconds.
+
+---
+
+### behaviors/survival.js — Skip GoalXZ flee when in tree canopy to prevent lethal fall damage
+**Problem:** The flee logic used `GoalXZ(fleeX, fleeZ)` regardless of Y position. From y=81 in a spruce canopy, the pathfinder routes the bot to a ground-level XZ target by navigating down through/off the canopy edge — a 7–17 block drop. At y=81→74 (7 blocks) that's ~3.5 hearts of fall damage. The bot that triggered this session had 5 HP when it tried to flee; the fall + one mob hit killed it instantly. Confirmed in logs: position went from (-102,81) → (-97,74) in two ticks, then died.
+**Fix:** Added `const inCanopy = bot.entity.position.y > 75` check before the `GoalXZ` attempt. In canopy, `GoalXZ` is skipped entirely and execution falls through to the existing sprint-flee fallback (face away from threat, sprint+forward+jump for 2.5 s). Sprint flee stays roughly horizontal and avoids pathfinder-induced vertical routing.
+**Strategy:** The sprint fallback already existed for the case where `GoalXZ` throws. Canopy fleeing should always use it — horizontal sprint over canopy surface is safer than any pathfinder route that traverses a 10+ block vertical gap.
+
+---
+
+### behaviors/survival.js — Raise combat flee threshold from ≤4 to ≤6 HP
+**Problem:** The combat loop broke out to flee only when `health <= 4` (2 hearts). The flee itself takes 2–5 seconds (GoalXZ navigation), during which the mob lands 1–2 more hits at ~2.5 damage each. Starting the flee at 4 HP means arriving at the destination with 0 HP. This was a contributing factor in the logged death sequence.
+**Fix:** Changed the break condition to `health <= 6` (3 hearts). The bot now starts fleeing 2 HP earlier, giving a buffer that absorbs the damage taken during the flee itself.
+**Strategy:** The safety margin needs to cover the worst-case damage window between deciding to flee and actually being out of range. 6 HP (3 hearts) covers two zombie hits and still leaves 1 HP to spare.
+
+---
+
+### behaviors/gather.js — Add failed-block cache + upper height filter to prevent gather stuck loops
+**Problem 1 (stuck loop):** When `mineBlock` failed (pathfinding timeout or error), `gatherWood` called `explore(bot)` to move slightly, then returned. Next tick, `findBlock` found the *same block* again (it was still the closest), tried again, failed, explored again — infinite loop. Confirmed in logs: bot at (-148,70,-212) for 16+ seconds in gather mode without collecting anything.
+**Fix:** Added a `failedBlockCache` map (block position → expiry timestamp, 60s TTL). On `mineBlock` failure, the block is added to the cache via `markBlockFailed()`. The `findBlock` call filters out cached blocks via `isFailedBlock()`, so the next search skips the unreachable block and finds a different one. After 60 seconds, the block is retried in case the path was temporarily blocked.
+
+**Problem 2 (high-canopy logs):** `findBlock` included logs up to `currentY + MAX_DESCENT` above the bot. From y=70, this includes spruce logs at y=78–82 (top of canopy). Navigating to a log at y=80+ from y=70 requires climbing through dense leaves — `GoalGetToBlock` often fails or takes a very long time, feeding back into Problem 1.
+**Fix:** Added `b.position.y <= currentY + 5` to the `useExtraInfo` filter. The bot now only targets logs within 5 blocks above its current Y, preferring easy-to-reach trunk blocks at or near ground level over high-canopy crown blocks.
+**Strategy:** Limit the search space to blocks the bot can reliably navigate to, then mark failures so the next search tries something different. Together these prevent the bot from repeatedly burning time on the same impossible navigation attempt.
+
 ## 2026-03-27 (session 8)
 
 ### core/loop.js — Fix critical dig-down offset bug in unstick() (the bot's snow layer was never dug)

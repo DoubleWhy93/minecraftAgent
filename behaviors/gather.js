@@ -2,6 +2,22 @@ const { goals } = require('mineflayer-pathfinder')
 
 const SEARCH_RADIUS = 64
 const MAX_DESCENT = 32
+// Blocks the bot failed to navigate to recently. Prevents the bot from
+// looping on the same unreachable block every tick after a failed mineBlock.
+const failedBlockCache = new Map()  // "x,y,z" → expiry timestamp
+const FAILED_BLOCK_TTL = 60000      // retry the same block after 60 s
+
+function isFailedBlock(b) {
+  const k = `${b.position.x},${b.position.y},${b.position.z}`
+  const exp = failedBlockCache.get(k)
+  if (exp === undefined) return false
+  if (Date.now() > exp) { failedBlockCache.delete(k); return false }
+  return true
+}
+
+function markBlockFailed(b) {
+  failedBlockCache.set(`${b.position.x},${b.position.y},${b.position.z}`, Date.now() + FAILED_BLOCK_TTL)
+}
 
 const LOG_BLOCKS = ['oak_log','birch_log','spruce_log','jungle_log','acacia_log','dark_oak_log','mangrove_log']
 const COAL_ORE_BLOCKS = ['coal_ore','deepslate_coal_ore']
@@ -160,14 +176,21 @@ async function gatherWood(bot) {
   const block = bot.findBlock({
     matching: b => LOG_BLOCKS.includes(b.name),
     maxDistance: SEARCH_RADIUS,
-    useExtraInfo: b => b.position.y >= currentY - MAX_DESCENT
+    // Stay within 32 blocks below and 5 blocks above current Y.
+    // The +5 cap avoids targeting high-canopy logs (y=78+) that require
+    // climbing through leaves — those blocks are hard to reach from ground
+    // level and produce repeated GoalGetToBlock failures.
+    useExtraInfo: b => b.position.y >= currentY - MAX_DESCENT &&
+                       b.position.y <= currentY + 5 &&
+                       !isFailedBlock(b)
   })
-  if (!block) { console.log('[gather] no wood nearby, exploring...'); await explore(bot); return }
+  if (!block) { console.log('[gather] no accessible wood nearby, exploring...'); await explore(bot); return }
 
   try {
     await mineBlock(bot, block)
   } catch (err) {
     console.log(`[gather] could not reach wood: ${err.message}`)
+    markBlockFailed(block)
     await explore(bot)
   }
 }

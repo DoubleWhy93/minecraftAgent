@@ -120,7 +120,7 @@ async function act(bot) {
         const deadline = Date.now() + 6000
         while (Date.now() < deadline) {
           if (!target.isValid) break
-          if (bot.health <= 4) { needsFlee = true; break }
+          if (bot.health <= 6) { needsFlee = true; break }
           const dist = target.position.distanceTo(bot.entity.position)
           if (dist > 3) {
             bot.pathfinder.setGoal(new GoalNear(
@@ -156,13 +156,20 @@ async function act(bot) {
     const fleeX = Math.round(bot.entity.position.x + nx * 32)
     const fleeZ = Math.round(bot.entity.position.z + nz * 32)
     let fled = false
-    try {
-      await bot.pathfinder.goto(new GoalXZ(fleeX, fleeZ))
-      fled = true
-    } catch (_) {}
+    // When in a tree canopy (y > 75), GoalXZ routes the pathfinder downward
+    // through canopy edges to reach the XZ target — the bot drops 10+ blocks
+    // and takes fatal fall damage even at moderate health. Use direct sprint
+    // controls instead; they stay roughly horizontal without pathfinder routing.
+    const inCanopy = bot.entity.position.y > 75
+    if (!inCanopy) {
+      try {
+        await bot.pathfinder.goto(new GoalXZ(fleeX, fleeZ))
+        fled = true
+      } catch (_) {}
+    }
 
     if (!fled) {
-      // Pathfinder failed — sprint away manually
+      // Sprint fallback — also the primary path when in canopy
       try {
         const yaw = Math.atan2(-nx, -nz)
         await bot.look(yaw, 0, true)

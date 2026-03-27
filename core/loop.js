@@ -211,6 +211,11 @@ function start(bot, config) {
   bot.on('health', () => {
     if (running && bot.health <= 8) {
       try { bot.pathfinder.stop() } catch (_) {}
+      // Also abort any in-progress bot.dig() call so the behavior exits
+      // immediately and survival can run in the same tick. Without this,
+      // bare-hand log digging (6+ seconds) and exitCanopy's dig loop both
+      // block the tick while the bot takes repeated mob hits.
+      try { bot.stopDigging() } catch (_) {}
     }
   })
 
