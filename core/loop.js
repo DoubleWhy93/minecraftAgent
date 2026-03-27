@@ -95,6 +95,25 @@ async function unstick(bot) {
     }
   }
 
+  // When in canopy, the pathfinder cannot efficiently plan a route down through
+  // 15+ leaf layers even with replaceables set, because the bot may be physically
+  // resting on a leaf block and the fall path is cluttered. Dig straight down
+  // so gravity carries the bot to the forest floor without pathfinding.
+  if (bot.entity.position.y > 75) {
+    for (let i = 0; i < 25; i++) {
+      const cur = bot.entity.position.floored()
+      if (cur.y <= 68) break
+      const below = bot.blockAt(cur.offset(0, -1, 0))
+      if (below && below.name !== 'air' && below.name !== 'water' &&
+          below.name !== 'lava' && below.name !== 'bedrock') {
+        try { await bot.dig(below) } catch (_) {}
+      }
+      await new Promise(r => setTimeout(r, 200))
+    }
+    // If we made it to ground level, normal tick behaviors can take over
+    if (bot.entity.position.y <= 68) return
+  }
+
   const { goals: { GoalNear } } = require('mineflayer-pathfinder')
   const pos = bot.entity.position
   const angle = Math.random() * 2 * Math.PI

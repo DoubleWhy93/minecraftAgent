@@ -24,6 +24,18 @@ bot.once('spawn', () => {
   // The default of 4 means any gap larger than 4 blocks — common between the
   // bottom of a spruce canopy and the ground — returns 'noPath'.
   movements.maxDropDown = 20
+
+  // Leaves are physically passable in Minecraft (no collision box) but
+  // mineflayer's block data reports them with boundingBox:'block', causing the
+  // pathfinder to treat them as solid walls. This produces A* timeouts in dense
+  // forests and makes flee/explore/unstick all fail. Adding leaf block IDs to
+  // replaceables tells the pathfinder they can be freely entered, matching the
+  // actual in-game physics.
+  const leafIds = Object.values(mcData.blocks)
+    .filter(b => b.name.endsWith('_leaves'))
+    .map(b => b.id)
+  for (const id of leafIds) movements.replaceables.add(id)
+
   bot.pathfinder.setMovements(movements)
 
   mineflayerViewer(bot, { port: 3007, firstPerson: false })

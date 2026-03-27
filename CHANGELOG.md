@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-03-27 (session 7)
+
+### bot.js — Add leaf blocks to movements.replaceables (critical root-cause fix)
+**Problem:** Confirmed in logs: bot repeatedly died with errors `"No path to the goal!"` and `"Took too long to decide path to goal!"` while surrounded by `spruce_leaves`. Root cause: mineflayer's block data reports all `*_leaves` blocks with `boundingBox:'block'`, causing mineflayer-pathfinder to treat them as solid walls. In practice, Minecraft leaves have no collision box — players and mobs move through them freely. The pathfinder's incorrect model produced: (1) A* timeouts when navigating through or down from a forest canopy, (2) flee failures when mobs attacked in a forested area (GoalXZ could not route through leaves, manual sprint also failed against "walls" in pathfinder's model), (3) explore() fallbacks failing identically. All these failures trace to this single mismatch between pathfinder model and game reality.
+**Fix:** After constructing `Movements`, iterate `mcData.blocks` for all blocks whose name ends in `_leaves` and add their IDs to `movements.replaceables`. Blocks in `replaceables` are treated as freely enterable by the pathfinder (like air), which matches the in-game physics. This makes forest navigation, canopy descent, flee routing, and explore all work correctly without any pathfinding timeouts.
+
+---
+
+### core/loop.js — Direct dig-down canopy escape in unstick()
+**Problem:** Even with `maxDropDown=20` and the leaf-passable fix, the unstick function's `GoalNear(tx, 64, tz, 8)` can still fail when the bot is physically resting on a leaf block in the canopy: the pathfinder plans a path "through" the leaves but the bot's physics position is stuck on a leaf surface it can't step off from without digging it first. Logs confirm unstick fired 6+ times but the bot stayed at y=81-82 throughout, only jittering ±1 block.
+**Fix:** When `pos.y > 75`, run a dig-down loop (up to 25 iterations, 200ms apart) that digs the block directly below the bot's feet and pauses for physics to update. Gravity carries the bot down as each layer is broken. The loop exits when `y <= 68` (forest floor) and returns early, letting normal behaviors take over. If the loop completes without reaching ground (unusual), execution falls through to the existing `GoalNear` approach as a final fallback.
+
+---
+
+### behaviors/gather.js — Increase MAX_DESCENT from 12 to 32
+**Problem:** `gatherWood` uses `useExtraInfo: b => b.position.y >= currentY - MAX_DESCENT` to filter out logs too far below the bot. With `MAX_DESCENT=12`, a bot in the canopy at y=82 only searched for logs at y≥70 — this excluded all spruce trunk bases (typically y=64–68), leaving only the unreachable upper log sections as candidates. The pathfinder found these upper logs, tried to navigate to them, and consistently timed out or failed because they were surrounded by the thickest part of the canopy.
+**Fix:** Increased `MAX_DESCENT` to 32. A bot at y=82 now searches for logs at y≥50, capturing full tree trunks from canopy top to base. Combined with the leaf-passable fix, the pathfinder can now route directly to the trunk at ground level rather than the crown section.
+
+---
+
 ## 2026-03-27 (session 6)
 
 ### bot.js — Raise pathfinder maxDropDown from 4 to 20 (critical)

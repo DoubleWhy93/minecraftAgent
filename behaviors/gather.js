@@ -1,7 +1,7 @@
 const { goals } = require('mineflayer-pathfinder')
 
 const SEARCH_RADIUS = 64
-const MAX_DESCENT = 12
+const MAX_DESCENT = 32
 
 const LOG_BLOCKS = ['oak_log','birch_log','spruce_log','jungle_log','acacia_log','dark_oak_log','mangrove_log']
 const COAL_ORE_BLOCKS = ['coal_ore','deepslate_coal_ore']
