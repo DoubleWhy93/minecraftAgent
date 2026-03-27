@@ -1,7 +1,8 @@
 const fs = require('fs')
 const EventEmitter = require('events')
 
-const STUCK_THRESHOLD = 60
+// 20 entries × 3 s loop interval = 60 s — must match the buffer size below
+const STUCK_THRESHOLD = 20
 const TIMER_INTERVAL_MS = 10 * 60 * 1000 // 10 minutes
 
 class Watcher extends EventEmitter {
@@ -52,7 +53,7 @@ class Watcher extends EventEmitter {
 
   _onEntry(entry) {
     this.recentEntries.push(entry)
-    if (this.recentEntries.length > 20) this.recentEntries.shift()
+    if (this.recentEntries.length > STUCK_THRESHOLD) this.recentEntries.shift()
 
     // Death trigger
     if (entry.health <= 0) {
@@ -61,8 +62,9 @@ class Watcher extends EventEmitter {
       return
     }
 
-    // Stuck trigger
-    if (entry.currentBehavior === 'gather' && this.recentEntries.length >= STUCK_THRESHOLD) {
+    // Stuck trigger — any behavior that should involve movement
+    const movingBehaviors = ['gather', 'survival', 'smelt']
+    if (movingBehaviors.includes(entry.currentBehavior) && this.recentEntries.length >= STUCK_THRESHOLD) {
       const recent = this.recentEntries.slice(-STUCK_THRESHOLD)
       const first = recent[0].position
       const allSame = recent.every(e =>
@@ -70,7 +72,7 @@ class Watcher extends EventEmitter {
         Math.abs(e.position.z - first.z) <= 2
       )
       if (allSame) {
-        console.log('[watcher] stuck trigger')
+        console.log(`[watcher] stuck trigger (behavior: ${entry.currentBehavior})`)
         this.emit('trigger', 'stuck')
       }
     }

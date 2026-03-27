@@ -44,6 +44,51 @@ function isCave(bot) {
   return solidAbove >= 5
 }
 
+// Actively dig out and drop from the tree canopy.
+// The most common stuck scenario: bot respawns at y≈82 standing on a thin
+// snow layer sitting on leaf blocks. Pathfinding consistently fails because
+// the canopy provides no clear standing positions. Instead of relying on the
+// pathfinder, dig the block at the bot's own y (the snow layer) and the two
+// blocks below to open a hole, then sprint off the edge if still stuck.
+async function exitCanopy(bot) {
+  const fp = bot.entity.position.floored()
+  console.log(`[gather] trapped in canopy at y=${fp.y}, digging escape hole...`)
+
+  // Dig at y=0, y=-1, y=-2 relative to bot's floored position.
+  // y=0 removes the snow layer the bot is standing ON (the key block that
+  // was always missed by the old dig-down code which only checked y=-1).
+  for (const dy of [0, -1, -2]) {
+    const b = bot.blockAt(fp.offset(0, dy, 0))
+    if (b && b.name !== 'air' && b.name !== 'water' &&
+        b.name !== 'lava' && b.name !== 'bedrock') {
+      try { await bot.dig(b) } catch (_) {}
+      await new Promise(r => setTimeout(r, 300))
+    }
+  }
+
+  // Let physics process the fall
+  await new Promise(r => setTimeout(r, 500))
+
+  // If still in canopy, sprint off the edge in a random direction
+  if (bot.entity.position.y > 75) {
+    const angle = Math.random() * 2 * Math.PI
+    try {
+      await bot.look(angle, 0, true)
+      bot.setControlState('sprint', true)
+      bot.setControlState('forward', true)
+      await new Promise(r => setTimeout(r, 1500))
+    } finally {
+      bot.setControlState('sprint', false)
+      bot.setControlState('forward', false)
+    }
+  }
+
+  // If we successfully descended, explore to find a tree at ground level
+  if (bot.entity.position.y <= 75) {
+    await explore(bot)
+  }
+}
+
 async function explore(bot) {
   const angle = Math.random() * 2 * Math.PI
   const dist = 16 + Math.random() * 32
@@ -104,6 +149,13 @@ async function gatherWood(bot) {
   // Always try to surface when underground — even with a pickaxe, the bot
   // can't pathfind to tree canopy through solid stone
   if (isCave(bot)) { await surface(bot); return }
+
+  // When stuck in the tree canopy (y > 75), prioritise escaping downward over
+  // trying to pathfind to a log. In a dense spruce canopy the pathfinder often
+  // fails to find standing positions because all nearby blocks are leaf/snow.
+  // exitCanopy digs the block the bot stands on and sprints off the edge —
+  // approaches that don't depend on the pathfinder at all.
+  if (currentY > 75) { await exitCanopy(bot); return }
 
   const block = bot.findBlock({
     matching: b => LOG_BLOCKS.includes(b.name),

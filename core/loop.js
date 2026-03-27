@@ -76,6 +76,8 @@ async function unstick(bot) {
   console.log('[loop] stuck detected, attempting to break free...')
   stuckCount = 0
   posHistory.length = 0
+  // Stop any active pathfinding — competing movement can block dig operations.
+  try { bot.pathfinder.stop() } catch (_) {}
 
   // Dig immediately adjacent blocks first — this frees the bot from leaf traps,
   // narrow caves, or any obstruction the pathfinder cannot navigate around.
@@ -95,22 +97,42 @@ async function unstick(bot) {
     }
   }
 
-  // When in canopy, the pathfinder cannot efficiently plan a route down through
-  // 15+ leaf layers even with replaceables set, because the bot may be physically
-  // resting on a leaf block and the fall path is cluttered. Dig straight down
-  // so gravity carries the bot to the forest floor without pathfinding.
+  // When in canopy, dig straight down so gravity carries the bot to the forest
+  // floor without relying on pathfinding. Critical fix: the bot often stands on
+  // a snow layer whose block coordinate equals the bot's own floored Y (e.g.
+  // snow at y=82 when bot.entity.position.y ≈ 82.125). The previous code only
+  // checked offset(0,-1,0) = y=81 and therefore NEVER dug the snow at y=82.
+  // We now try offset(0,0,0) first (the block the bot stands on) then offset(0,-1,0).
   if (bot.entity.position.y > 75) {
-    for (let i = 0; i < 25; i++) {
+    for (let i = 0; i < 35; i++) {
       const cur = bot.entity.position.floored()
       if (cur.y <= 68) break
-      const below = bot.blockAt(cur.offset(0, -1, 0))
-      if (below && below.name !== 'air' && below.name !== 'water' &&
-          below.name !== 'lava' && below.name !== 'bedrock') {
-        try { await bot.dig(below) } catch (_) {}
+      let dug = false
+      for (const dy of [0, -1]) {
+        const target = bot.blockAt(cur.offset(0, dy, 0))
+        if (target && target.name !== 'air' && target.name !== 'water' &&
+            target.name !== 'lava' && target.name !== 'bedrock') {
+          try { await bot.dig(target); dug = true } catch (_) {}
+          if (dug) break
+        }
       }
-      await new Promise(r => setTimeout(r, 200))
+      await new Promise(r => setTimeout(r, 300))
     }
     // If we made it to ground level, normal tick behaviors can take over
+    if (bot.entity.position.y <= 68) return
+
+    // Dig-down did not free the bot — sprint off the canopy edge as fallback
+    console.log('[loop] dig-down ineffective, sprinting off canopy edge...')
+    const sprintAngle = Math.random() * 2 * Math.PI
+    try {
+      await bot.look(sprintAngle, 0, true)
+      bot.setControlState('sprint', true)
+      bot.setControlState('forward', true)
+      await new Promise(r => setTimeout(r, 2000))
+    } finally {
+      bot.setControlState('sprint', false)
+      bot.setControlState('forward', false)
+    }
     if (bot.entity.position.y <= 68) return
   }
 

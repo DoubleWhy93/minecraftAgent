@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-03-27 (session 8)
+
+### core/loop.js — Fix critical dig-down offset bug in unstick() (the bot's snow layer was never dug)
+**Problem:** The log shows the bot stuck at (-101, 82, -213) for 14+ hours — the watcher fired the 'stuck' trigger, spawning this improvement session. Analysis: `unstick()` fires every ~10 seconds when the position doesn't change, but it was completely ineffective. The dig-down loop iterates `offset(0,-1,0)` (y−1) — the block UNDER what the bot stands on — but when the bot is standing on a snow layer at y=82, the snow layer's block coordinate IS y=82, matching the bot's own floored position. The previous code looked at y=81 (under the snow), which is a leaf block. Digging y=81 (a passable leaf) does nothing to dislodge the bot — it's still standing on the snow at y=82. This is why 14 hours of `unstick()` calls all silently failed: the loop was always off by one.
+**Fix:** Changed the inner loop to try both `offset(0,0,0)` (the block at the bot's own floored Y, e.g. the snow layer) before `offset(0,-1,0)` (below). Once the snow at y=82 is dug, the bot falls through the physically-passable leaves below and reaches the forest floor. Also increased iterations from 25 to 35 and wait time from 200ms to 300ms so physics can fully settle between digs. Added `bot.pathfinder.stop()` at the start so competing pathfinding doesn't interfere with dig operations.
+
+---
+
+### core/loop.js — Add sprint-off-edge fallback when dig-down fails in unstick()
+**Problem:** Even with the offset fix, there are edge cases where no solid block exists at y=0 or y−1 (e.g. the bot is floating in mid-canopy air, mineflayer's physics model showing it partially inside a leaf block). In those cases the dig loop completes with no effect, then the existing `GoalNear` pathfinding attempt also fails (because the pathfinder still can't find standing positions in the leaf-saturated canopy), leaving the bot exactly where it started.
+**Fix:** After the dig-down loop, if the bot is still above y=75, look in a random direction, set `sprint=true` + `forward=true` for 2 seconds, then release. Sprinting can carry the bot horizontally to a canopy edge and over it, letting gravity finish the descent. This is a physics-direct approach that doesn't depend on the pathfinder at all. Only fires if the dig-down failed (i.e. it's a fallback, not the primary approach).
+
+---
+
+### behaviors/gather.js — Proactive canopy exit in gatherWood() bypasses unreliable pathfinding
+**Problem:** `gatherWood()` immediately tried `GoalGetToBlock` to reach a log, then fell back to `GoalNear(tx,64,tz,8)` via `explore()`. Both consistently failed from y=82 because the pathfinder couldn't find valid standing positions in a leaf-dense canopy (all nearby blocks are either leaves in `replaceables` or snow). The bot would spin through these failing pathfinder calls every tick without ever physically descending. Even after `unstick()` was supposed to fire, `gatherWood` would immediately undo any progress by calling into failing pathfinding again.
+**Fix:** Added `if (currentY > 75) { await exitCanopy(bot); return }` at the top of `gatherWood()`, before any pathfinding. `exitCanopy()` digs the blocks at the bot's floored Y, Y−1, and Y−2 (covering both snow layers and the leaves below them), waits for physics to process the fall, then sprints off the edge if the bot is still elevated. This runs every tick as long as the bot is above y=75, so even if one call doesn't fully escape, repeated calls converge on the exit. Critically, neither the dig nor the sprint depends on the pathfinder.
+
+---
+
 ## 2026-03-27 (session 7)
 
 ### bot.js — Add leaf blocks to movements.replaceables (critical root-cause fix)

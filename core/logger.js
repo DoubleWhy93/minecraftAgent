@@ -39,4 +39,20 @@ function snapshot(bot, currentBehavior, logPath) {
   fs.appendFileSync(logPath, JSON.stringify(entry) + '\n')
 }
 
-module.exports = { snapshot }
+let _logPath = null
+
+function initConsoleCapture(logPath) {
+  _logPath = logPath
+  const orig = { log: console.log, warn: console.warn, error: console.error }
+
+  for (const level of ['log', 'warn', 'error']) {
+    console[level] = (...args) => {
+      orig[level](...args)
+      if (!_logPath) return
+      const entry = { timestamp: new Date().toISOString(), type: 'console', level, message: args.join(' ') }
+      try { fs.appendFileSync(_logPath, JSON.stringify(entry) + '\n') } catch (_) {}
+    }
+  }
+}
+
+module.exports = { snapshot, initConsoleCapture }

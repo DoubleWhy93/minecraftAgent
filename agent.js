@@ -11,7 +11,7 @@ const PROMPT = `Improve the Minecraft survival bot located at ${PROJECT_PATH}. R
 
 Do not ask clarifying questions. Do not wait for input. Read the code, identify problems, make decisions, and fix them. If something is ambiguous, pick the most sensible option and implement it.
 
-After making changes, append a summary of what you changed and why to CHANGELOG.md in the project root. Include the date, a short description of each change, and what problem it fixed.
+After making changes, append an entry to CHANGELOG.md in the project root. Include the date, a short description of each change, what problem it fixed, and the strategy behind the change — explain the reasoning, not just what was done.
 
 Then commit all changes with git. Stage only the files you modified. Write a clear, descriptive commit message explaining what was improved and why — not just "update bot".
 
