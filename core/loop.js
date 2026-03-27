@@ -129,6 +129,14 @@ async function tick(bot, logPath) {
 }
 
 function start(bot, config) {
+  // If health drops critically while a behavior is running, stop the pathfinder
+  // so the current await resolves/throws and survival can take over next tick.
+  bot.on('health', () => {
+    if (running && bot.health <= 8) {
+      try { bot.pathfinder.stop() } catch (_) {}
+    }
+  })
+
   console.log(`[loop] starting with interval ${config.loopIntervalMs}ms`)
   setInterval(() => tick(bot, config.logPath), config.loopIntervalMs)
 }

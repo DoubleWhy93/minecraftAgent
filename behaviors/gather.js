@@ -49,8 +49,20 @@ async function surface(bot) {
   } catch (_) { await explore(bot) }
 }
 
+const AXE_NAMES = ['diamond_axe', 'iron_axe', 'stone_axe', 'wooden_axe']
+const PICKAXE_NAMES = ['diamond_pickaxe', 'iron_pickaxe', 'stone_pickaxe', 'wooden_pickaxe']
+
+async function equipBestTool(bot, block) {
+  const toolList = LOG_BLOCKS.includes(block.name) ? AXE_NAMES : PICKAXE_NAMES
+  for (const name of toolList) {
+    const item = bot.inventory.items().find(i => i.name === name)
+    if (item) { try { await bot.equip(item, 'hand') } catch (_) {} return }
+  }
+}
+
 async function mineBlock(bot, block) {
   await bot.pathfinder.goto(new goals.GoalGetToBlock(block.position.x, block.position.y, block.position.z))
+  await equipBestTool(bot, block)
   await bot.dig(block)
 }
 

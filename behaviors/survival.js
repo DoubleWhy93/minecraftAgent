@@ -7,7 +7,8 @@ const FOOD_ITEMS = [
   'bread', 'cooked_beef', 'cooked_chicken', 'cooked_porkchop', 'cooked_mutton',
   'cooked_rabbit', 'cooked_salmon', 'cooked_cod', 'apple', 'golden_apple',
   'carrot', 'baked_potato', 'pumpkin_pie', 'melon_slice', 'mushroom_stew',
-  'beetroot', 'beef', 'chicken', 'porkchop', 'rabbit', 'mutton', 'sweet_berries'
+  'beetroot', 'beef', 'chicken', 'porkchop', 'rabbit', 'mutton', 'sweet_berries',
+  'rotten_flesh' // last resort — causes hunger effect but beats starving to death
 ]
 
 // Best sword wins; order matters (best first)
@@ -19,6 +20,9 @@ const ARMOR_PIECES = [
   { slot: 'legs',  items: ['diamond_leggings',  'iron_leggings',  'chainmail_leggings',  'golden_leggings',  'leather_leggings']  },
   { slot: 'feet',  items: ['diamond_boots',     'iron_boots',     'chainmail_boots',     'golden_boots',     'leather_boots']     },
 ]
+
+// Cooldown prevents re-triggering forage every tick when there's nothing to eat.
+let forageCooldownUntil = 0
 
 function nearbyHostile(bot, radius) {
   return Object.values(bot.entities).filter(e =>
@@ -53,13 +57,21 @@ async function wearArmor(bot) {
 
 // Forage for sweet berry bushes — common in taiga/snowy biomes.
 async function forage(bot) {
-  const { GoalGetToBlock } = require('mineflayer-pathfinder').goals
+  const { GoalGetToBlock, GoalNear } = require('mineflayer-pathfinder').goals
   const bush = bot.findBlock({
     matching: b => b.name === 'sweet_berry_bush',
-    maxDistance: 48
+    maxDistance: 128
   })
   if (!bush) {
-    console.log('[survival] hungry but no food or berry bushes found')
+    // No berry bushes found — explore to find food sources
+    console.log('[survival] hungry but no berry bushes nearby, exploring...')
+    const pos = bot.entity.position
+    const angle = Math.random() * 2 * Math.PI
+    const tx = Math.floor(pos.x + Math.cos(angle) * 32)
+    const tz = Math.floor(pos.z + Math.sin(angle) * 32)
+    try {
+      await bot.pathfinder.goto(new GoalNear(tx, pos.y, tz, 3))
+    } catch (_) {}
     return
   }
   try {
@@ -72,11 +84,13 @@ async function forage(bot) {
 }
 
 function canAct(bot) {
-  if (nearbyHostile(bot, 12).length > 0) return true
-  // Eat proactively so health stays full; trigger earlier to avoid crisis
-  if (bot.food < 18) return true
-  // Low health but has food to recover
-  if (bot.health < 16 && bot.inventory.items().some(i => FOOD_ITEMS.includes(i.name))) return true
+  // Wider radius catches ranged attackers (skeletons shoot at ~16 blocks)
+  if (nearbyHostile(bot, 16).length > 0) return true
+  const hasFood = bot.inventory.items().some(i => FOOD_ITEMS.includes(i.name))
+  // Proactively eat only when we actually have food — avoids infinite loop when hungry but foodless
+  if (hasFood && (bot.food < 18 || bot.health < 16)) return true
+  // Critical starvation — forage, but use a cooldown so we don't block gather/craft forever
+  if (bot.food < 6 && Date.now() > forageCooldownUntil) return true
   return false
 }
 
@@ -90,7 +104,9 @@ async function act(bot) {
   const threats = nearbyHostile(bot, 16)
 
   if (threats.length > 0) {
-    if (sword) {
+    // Flee from creepers even when armed — they explode when close
+    const hasCreeper = threats.some(t => t.name === 'creeper')
+    if (sword && !hasCreeper) {
       // Fight the closest threat
       const target = threats.reduce((a, b) =>
         a.position.distanceTo(bot.entity.position) <= b.position.distanceTo(bot.entity.position) ? a : b
@@ -110,19 +126,39 @@ async function act(bot) {
         console.log('[survival] attacking', target.name)
       } catch (_) {}
     } else {
-      // No sword — flee away from all threats
+      // No sword or creeper present — flee away from all threats
       let fx = 0, fz = 0
       for (const mob of threats) {
         fx += bot.entity.position.x - mob.position.x
         fz += bot.entity.position.z - mob.position.z
       }
       const len = Math.sqrt(fx * fx + fz * fz) || 1
-      const fleeX = Math.round(bot.entity.position.x + (fx / len) * 24)
-      const fleeZ = Math.round(bot.entity.position.z + (fz / len) * 24)
+      const nx = fx / len
+      const nz = fz / len
+      const fleeX = Math.round(bot.entity.position.x + nx * 32)
+      const fleeZ = Math.round(bot.entity.position.z + nz * 32)
+      let fled = false
       try {
         await bot.pathfinder.goto(new GoalXZ(fleeX, fleeZ))
-        console.log('[survival] fled from', threats.length, 'mob(s)')
+        fled = true
       } catch (_) {}
+
+      if (!fled) {
+        // Pathfinder failed — sprint away manually
+        try {
+          // yaw: atan2(-dx, -dz) points bot in direction (nx, nz)
+          const yaw = Math.atan2(-nx, -nz)
+          await bot.look(yaw, 0, true)
+          bot.setControlState('sprint', true)
+          bot.setControlState('forward', true)
+          bot.setControlState('jump', true)
+          await new Promise(r => setTimeout(r, 2500))
+        } catch (_2) {}
+        bot.setControlState('sprint', false)
+        bot.setControlState('forward', false)
+        bot.setControlState('jump', false)
+      }
+      console.log('[survival] fled from', threats.length, 'mob(s)')
     }
     return
   }
@@ -138,8 +174,10 @@ async function act(bot) {
       } catch (err) {
         console.error('[survival] eat error:', err.message)
       }
-    } else if (bot.food < 14) {
+    } else if (bot.food < 10) {
       await forage(bot)
+      // Whether forage found something or not, apply cooldown so other behaviors can run
+      forageCooldownUntil = Date.now() + 30000
     }
   }
 }
