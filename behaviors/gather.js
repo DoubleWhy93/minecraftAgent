@@ -34,7 +34,12 @@ function isCave(bot) {
   let solidAbove = 0
   for (let dy = 1; dy <= 8; dy++) {
     const b = bot.blockAt(pos.offset(0, dy, 0))
-    if (b && b.boundingBox === 'block') solidAbove++
+    // Exclude leaves and snow — bot may be inside a tree canopy, not a cave
+    if (b && b.boundingBox === 'block' &&
+        !b.name.includes('leaves') &&
+        b.name !== 'snow' && b.name !== 'snow_block') {
+      solidAbove++
+    }
   }
   return solidAbove >= 5
 }

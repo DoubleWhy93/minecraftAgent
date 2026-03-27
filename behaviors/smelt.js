@@ -108,16 +108,10 @@ async function smeltBatch(bot, furnaceBlock) {
     if (!fuelItem) { console.log('[smelt] no coal for fuel'); return }
 
     const totalItems = inputItem.count
-    // Each coal smelts 8 items; provide just enough fuel
-    const coalNeeded = Math.ceil(totalItems / 8)
-    const coalToUse = Math.min(fuelItem.count, coalNeeded)
-    const fuelToLoad = fuelItem.count > coalToUse
-      ? bot.registry.items[fuelItem.type] ? { ...fuelItem, count: coalToUse } : fuelItem
-      : fuelItem
 
-    await furnace.putFuel(fuelToLoad)
+    await furnace.putFuel(fuelItem)
     await furnace.putInput(inputItem)
-    console.log(`[smelt] smelting ${totalItems}x ${inputItem.name} with ${coalToUse} coal...`)
+    console.log(`[smelt] smelting ${totalItems}x ${inputItem.name}...`)
 
     // Wait for each output individually so we can accumulate the full batch
     const batchTimeout = Math.max(SMELT_MIN_TIMEOUT_MS, totalItems * SMELT_PER_ITEM_MS)

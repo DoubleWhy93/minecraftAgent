@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-03-27 (session 5)
+
+### behaviors/gather.js — Fix `isCave` false positive inside tree canopy (critical)
+**Problem:** Spruce leaves have `boundingBox === 'block'` in mineflayer, so the bot standing inside a tree canopy at y:82 counted 5+ leaf blocks as "solid ceiling" and concluded it was underground. This caused `gatherWood` to call `surface()` every tick instead of mining the nearby tree. `surface()` pathfinds to `y + 20 = 102`, which fails through dense leaves, so the bot was permanently frozen. Confirmed in logs: 1,000+ consecutive entries at `{x:-101, y:82, z:-213}` surrounded only by `spruce_leaves` and `snow`, empty inventory, for 20+ minutes.
+**Fix:** `isCave` now excludes blocks whose name contains `'leaves'` or whose name is `'snow'`/`'snow_block'` from the solid-block count. These are surface biome blocks, not cave ceiling indicators. After this fix, the bot correctly reads y:82 in a tree as "surface", calls `findBlock` for logs, and the pathfinder navigates there (breaking leaves as needed via `allowBreaking`).
+
+---
+
+### core/loop.js — Fix `unstick` to dig out before pathfinding
+**Problem:** When physically trapped (inside a leaf canopy, a narrow cave, or any dense obstruction), `unstick` called `pathfinder.goto` with a random target. If the pathfinder can't navigate there due to the same obstruction, unstick does nothing — the bot detects stuck again 10 seconds later, unstick fails again, and the cycle repeats indefinitely.
+**Fix:** Before pathfinding, `unstick` now iterates over 9 blocks immediately adjacent to the bot (above, all 4 horizontal, and 4 diagonal-above) and calls `bot.dig()` on any solid non-bedrock block it finds. This physically carves an opening around the bot so the subsequent pathfinder call has a navigable path. Digs are best-effort (errors ignored); pathfinding then proceeds as before.
+
+---
+
+### behaviors/smelt.js — Fix crash when bot has more coal than needed for smelting
+**Problem:** When `fuelItem.count > coalNeeded`, the code built a partial-fuel object with `{ ...fuelItem, count: coalToUse }` — a plain JS object, not a mineflayer `Item` instance. `furnace.putFuel()` requires an actual inventory Item; passing a plain object caused a crash that silently aborted the entire smelt session and left raw iron un-smelted. This blocked iron tool progression since iron ingots were never produced.
+**Fix:** Removed the partial-fuel logic entirely. `furnace.putFuel(fuelItem)` now loads the full coal stack. Coal is mined in 16-unit batches and is abundant enough that loading extra is not a concern; correctness is more important than coal conservation at this stage.
+
+---
+
 ## 2026-03-27 (session 4)
 
 ### config.json — Reduce loopIntervalMs from 3000 to 1000

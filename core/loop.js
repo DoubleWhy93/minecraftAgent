@@ -77,6 +77,24 @@ async function unstick(bot) {
   stuckCount = 0
   posHistory.length = 0
 
+  // Dig immediately adjacent blocks first — this frees the bot from leaf traps,
+  // narrow caves, or any obstruction the pathfinder cannot navigate around.
+  const fp = bot.entity.position.floored()
+  const digTargets = [
+    fp.offset(0, 1, 0),  // above (most important for leaf canopy)
+    fp.offset(1, 0, 0), fp.offset(-1, 0, 0),
+    fp.offset(0, 0, 1), fp.offset(0, 0, -1),
+    fp.offset(1, 1, 0), fp.offset(-1, 1, 0),
+    fp.offset(0, 1, 1), fp.offset(0, 1, -1),
+  ]
+  for (const p of digTargets) {
+    const b = bot.blockAt(p)
+    if (b && b.name !== 'air' && b.name !== 'water' && b.name !== 'lava' &&
+        b.boundingBox === 'block' && b.name !== 'bedrock') {
+      try { await bot.dig(b) } catch (_) {}
+    }
+  }
+
   const { goals: { GoalNear } } = require('mineflayer-pathfinder')
   const pos = bot.entity.position
   const angle = Math.random() * 2 * Math.PI
