@@ -8,6 +8,18 @@ const COAL_ORE_BLOCKS = ['coal_ore','deepslate_coal_ore']
 const IRON_ORE_BLOCKS = ['iron_ore','deepslate_iron_ore']
 const DIAMOND_ORE_BLOCKS = ['diamond_ore','deepslate_diamond_ore']
 
+const HOSTILE_MOBS = new Set([
+  'zombie', 'skeleton', 'spider', 'cave_spider', 'creeper', 'enderman',
+  'witch', 'pillager', 'vindicator', 'phantom', 'drowned', 'husk', 'stray', 'slime'
+])
+
+function hostileNearby(bot) {
+  return Object.values(bot.entities).some(e =>
+    e.type === 'mob' && HOSTILE_MOBS.has(e.name) &&
+    e.position.distanceTo(bot.entity.position) < 16
+  )
+}
+
 function countItem(bot, names) {
   const list = Array.isArray(names) ? names : [names]
   return bot.inventory.items().filter(i => list.includes(i.name)).reduce((s, i) => s + i.count, 0)
@@ -170,6 +182,9 @@ function canAct(bot, stage) {
 }
 
 async function act(bot, stage) {
+  // Don't start navigation when hostile mobs are already nearby — let survival handle them
+  if (hostileNearby(bot)) return
+
   if (!stage) { await gatherWood(bot); return }
 
   switch (stage.id) {

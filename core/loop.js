@@ -105,12 +105,27 @@ async function tick(bot, logPath) {
     } else if (craft.canAct(bot, stage)) {
       currentBehavior = 'craft'
       await craft.act(bot, stage)
+      // If a mob attacked during craft, handle survival immediately without waiting for next tick
+      if (survival.canAct(bot)) {
+        currentBehavior = 'survival'
+        await survival.act(bot)
+      }
     } else if (smelt.canAct(bot, stage)) {
       currentBehavior = 'smelt'
       await smelt.act(bot, stage)
+      if (survival.canAct(bot)) {
+        currentBehavior = 'survival'
+        await survival.act(bot)
+      }
     } else if (gather.canAct(bot, stage)) {
       currentBehavior = 'gather'
       await gather.act(bot, stage)
+      // Critical: if a mob interrupted gather via pathfinder.stop(), fight back immediately
+      // without waiting up to 3 seconds for the next tick
+      if (survival.canAct(bot)) {
+        currentBehavior = 'survival'
+        await survival.act(bot)
+      }
     }
 
     if (checkStuck(bot, currentBehavior)) {

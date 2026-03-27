@@ -1,7 +1,8 @@
 const Vec3 = require('vec3')
 const { goals } = require('mineflayer-pathfinder')
 
-const SMELT_TIMEOUT_MS = 30000
+const SMELT_PER_ITEM_MS = 12000  // ~10s per item + buffer
+const SMELT_MIN_TIMEOUT_MS = 20000
 
 function count(bot, names) {
   const list = Array.isArray(names) ? names : [names]
@@ -106,26 +107,51 @@ async function smeltBatch(bot, furnaceBlock) {
     if (!inputItem) { console.log('[smelt] no iron to smelt'); return }
     if (!fuelItem) { console.log('[smelt] no coal for fuel'); return }
 
-    await furnace.putFuel(fuelItem)
+    const totalItems = inputItem.count
+    // Each coal smelts 8 items; provide just enough fuel
+    const coalNeeded = Math.ceil(totalItems / 8)
+    const coalToUse = Math.min(fuelItem.count, coalNeeded)
+    const fuelToLoad = fuelItem.count > coalToUse
+      ? bot.registry.items[fuelItem.type] ? { ...fuelItem, count: coalToUse } : fuelItem
+      : fuelItem
+
+    await furnace.putFuel(fuelToLoad)
     await furnace.putInput(inputItem)
-    console.log(`[smelt] smelting ${inputItem.count}x ${inputItem.name}...`)
+    console.log(`[smelt] smelting ${totalItems}x ${inputItem.name} with ${coalToUse} coal...`)
 
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('smelt timeout')), SMELT_TIMEOUT_MS)
-      const check = () => {
-        if (furnace.outputItem()) {
-          clearTimeout(timeout)
-          resolve()
+    // Wait for each output individually so we can accumulate the full batch
+    const batchTimeout = Math.max(SMELT_MIN_TIMEOUT_MS, totalItems * SMELT_PER_ITEM_MS)
+    const deadline = Date.now() + batchTimeout
+    let totalSmelted = 0
+
+    while (totalSmelted < totalItems && Date.now() < deadline) {
+      // Wait for the next output item to appear
+      await new Promise((resolve, reject) => {
+        const t = setTimeout(() => reject(new Error('item timeout')), 15000)
+        const check = () => {
+          if (furnace.outputItem()) { clearTimeout(t); resolve() }
         }
+        furnace.on('update', check)
+        check()
+      })
+      const taken = await furnace.takeOutput()
+      if (taken) {
+        totalSmelted += taken.count
+        console.log(`[smelt] took ${taken.count} iron ingots (${totalSmelted}/${totalItems})`)
+      } else {
+        break  // furnace emptied unexpectedly
       }
-      furnace.on('update', check)
-      check()
-    })
+      // Check if furnace still has input in progress; if not, we're done
+      if (!furnace.inputItem() && !furnace.outputItem()) break
+    }
 
-    await furnace.takeOutput()
-    console.log('[smelt] took iron ingots')
+    console.log(`[smelt] batch complete: ${totalSmelted} ingots`)
   } catch (err) {
     console.error('[smelt] error:', err.message)
+    // Grab any output that already finished before the error
+    if (furnace) {
+      try { await furnace.takeOutput() } catch (_) {}
+    }
   } finally {
     if (furnace) furnace.close()
   }

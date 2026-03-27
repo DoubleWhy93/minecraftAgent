@@ -4,7 +4,7 @@
   "username": "AgentBot",
   "version": false,
   "logPath": "./logs/gamestate.jsonl",
-  "loopIntervalMs": 3000,
+  "loopIntervalMs": 1000,
   "codingAgent": "cc",
   "improveOnStartup": true
 }

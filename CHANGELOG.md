@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-03-27 (session 4)
+
+### config.json — Reduce loopIntervalMs from 3000 to 1000
+**Problem:** With a 3-second tick interval, there was a multi-second death window between `gather.act` being interrupted (pathfinder.stop fires on health ≤8) and the next tick running `survival.act`. Logs confirmed: health=7.33 in gather mode at 03:01:17, dead at 03:01:24 — exactly the 3-second gap.
+**Fix:** Reduced loopIntervalMs to 1000ms. Survival now gets a chance to respond within 1 second of any other behavior completing.
+
+---
+
+### core/loop.js — Run survival immediately after any interrupted behavior
+**Problem:** When a mob attacked during `gather.act` or `craft.act`, the pathfinder was stopped, the behavior returned, `running` was set to false — then up to 3 seconds passed before survival ran. A zombie deals ~2.5 damage every 1.5s, so 2 free hits in that window = ~5 damage, fatal from 7hp.
+**Fix:** After each non-survival behavior (`craft`, `smelt`, `gather`) completes or is interrupted, the tick loop immediately re-checks `survival.canAct()` and runs `survival.act()` within the same tick. No wait for the next interval.
+
+---
+
+### behaviors/gather.js — Bail early when hostile mobs are nearby
+**Problem:** `gather.act` would start long `pathfinder.goto` navigation even when hostile mobs were already within 16 blocks. By the time pathfinder.stop fired (health ≤8) and the behavior exited, significant health was already lost.
+**Fix:** Added a `hostileNearby(bot)` check at the top of `act()`. If any hostile mob is within 16 blocks, gather returns immediately, letting the loop's post-behavior survival check engage combat without delay.
+
+---
+
+### behaviors/smelt.js — Smelt full batch instead of single output
+**Problem:** `smeltBatch` waited for ANY output to appear (first item ready after ~10s), took it, and returned. With 20 raw_iron in the furnace, only 1 ingot was collected per `act()` call. The 30-second timeout was also too short for batches larger than 2-3 items.
+**Fix:** Replaced the single-wait pattern with a loop that waits for each output item in turn until all input is smelted or a deadline is reached. Timeout is now dynamic: `max(20s, itemCount × 12s)`. Any output produced before an error is also safely taken in the `catch` block.
+
+---
+
 ## 2026-03-27 (session 3)
 
 ### behaviors/survival.js — Always trigger survival on critical health (≤8 HP)
