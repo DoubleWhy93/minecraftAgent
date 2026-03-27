@@ -1,5 +1,6 @@
 const mineflayer = require('mineflayer')
 const { pathfinder, Movements } = require('mineflayer-pathfinder')
+const { mineflayer: mineflayerViewer } = require('prismarine-viewer')
 const config = require('./config.json')
 const loop = require('./core/loop')
 
@@ -16,6 +17,9 @@ bot.once('spawn', () => {
   const mcData = require('minecraft-data')(bot.version)
   const movements = new Movements(bot, mcData)
   bot.pathfinder.setMovements(movements)
+
+  mineflayerViewer(bot, { port: 3007, firstPerson: false })
+  console.log('[bot] viewer running at http://localhost:3007')
 
   console.log(`[bot] spawned as ${bot.username} on ${config.host}:${config.port}`)
   loop.start(bot, config)

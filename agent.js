@@ -6,7 +6,16 @@ const Watcher = require('./core/watcher')
 
 const PROJECT_PATH = __dirname
 const LOG_PATH = path.resolve(PROJECT_PATH, config.logPath)
-const OPENCODE_PROMPT = `Improve the Minecraft survival bot located at ${PROJECT_PATH}. Read logs/gamestate.jsonl for recent performance data and improve the behavior files (behaviors/ and core/loop.js) to help the bot survive and gather resources better.`
+const GOALS = fs.readFileSync(path.join(PROJECT_PATH, 'GOALS.md'), 'utf8')
+const PROMPT = `Improve the Minecraft survival bot located at ${PROJECT_PATH}. Read logs/gamestate.jsonl for recent performance data and improve the behavior files (behaviors/ and core/loop.js) to help the bot survive and progress through the game.\n\n${GOALS}`
+
+function buildAgentCommand() {
+  const agent = config.codingAgent || 'opencode'
+  if (agent === 'cc' || agent === 'claude') {
+    return { cmd: 'claude', args: ['-p', PROMPT, '--verbose', '--dangerously-skip-permissions'] }
+  }
+  return { cmd: 'opencode', args: ['run', PROMPT] }
+}
 
 let botProcess = null
 let improving = false
@@ -45,15 +54,15 @@ async function runImprovement(reason) {
 
   await stopBot()
 
-  console.log('[agent] running OpenCode...')
-  const oc = spawn('opencode', ['run', OPENCODE_PROMPT], {
+  const { cmd, args } = buildAgentCommand()
+  console.log(`[agent] running ${cmd}...`)
+  const oc = spawn(cmd, args, {
     cwd: PROJECT_PATH,
-    stdio: 'inherit',
-    shell: true
+    stdio: ['ignore', 'inherit', 'inherit']
   })
 
   oc.on('exit', (code) => {
-    console.log(`[agent] OpenCode exited with code ${code}`)
+    console.log(`[agent] ${cmd} exited with code ${code}`)
     improving = false
     startBot()
   })
@@ -62,12 +71,16 @@ async function runImprovement(reason) {
 // Ensure logs dir exists
 fs.mkdirSync(path.dirname(LOG_PATH), { recursive: true })
 
-// Start bot
-startBot()
-
 // Start watcher
 const watcher = new Watcher(LOG_PATH)
 watcher.on('trigger', (reason) => runImprovement(reason))
 watcher.start()
+
+// Optionally trigger an improvement on startup (controlled by config.improveOnStartup)
+if (config.improveOnStartup !== false) {
+  runImprovement('startup')
+} else {
+  startBot()
+}
 
 console.log('[agent] running. Bot will auto-improve on death, being stuck, or every 10 minutes.')
