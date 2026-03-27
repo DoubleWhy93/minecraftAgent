@@ -27,6 +27,23 @@ bot.once('spawn', () => {
 
 bot.on('death', () => {
   console.log('[bot] died, respawning...')
+  const fs = require('fs')
+  const path = require('path')
+  const entry = {
+    timestamp: new Date().toISOString(),
+    health: 0,
+    food: bot.food,
+    position: {
+      x: Math.round(bot.entity.position.x),
+      y: Math.round(bot.entity.position.y),
+      z: Math.round(bot.entity.position.z)
+    },
+    inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
+    currentBehavior: 'death',
+    nearbyBlocks: []
+  }
+  const logPath = path.resolve(__dirname, config.logPath)
+  fs.appendFileSync(logPath, JSON.stringify(entry) + '\n')
   bot.respawn()
 })
 

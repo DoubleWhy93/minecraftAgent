@@ -1,7 +1,7 @@
 const fs = require('fs')
 const EventEmitter = require('events')
 
-const STUCK_THRESHOLD = 5
+const STUCK_THRESHOLD = 60
 const TIMER_INTERVAL_MS = 10 * 60 * 1000 // 10 minutes
 
 class Watcher extends EventEmitter {
