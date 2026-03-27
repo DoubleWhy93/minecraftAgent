@@ -7,7 +7,15 @@ const Watcher = require('./core/watcher')
 const PROJECT_PATH = __dirname
 const LOG_PATH = path.resolve(PROJECT_PATH, config.logPath)
 const GOALS = fs.readFileSync(path.join(PROJECT_PATH, 'GOALS.md'), 'utf8')
-const PROMPT = `Improve the Minecraft survival bot located at ${PROJECT_PATH}. Read logs/gamestate.jsonl for recent performance data and improve the behavior files (behaviors/ and core/loop.js) to help the bot survive and progress through the game.\n\n${GOALS}`
+const PROMPT = `Improve the Minecraft survival bot located at ${PROJECT_PATH}. Read logs/gamestate.jsonl for recent performance data and improve the behavior files (behaviors/ and core/loop.js) to help the bot survive and progress through the game.
+
+Do not ask clarifying questions. Do not wait for input. Read the code, identify problems, make decisions, and fix them. If something is ambiguous, pick the most sensible option and implement it.
+
+After making changes, append a summary of what you changed and why to CHANGELOG.md in the project root. Include the date, a short description of each change, and what problem it fixed.
+
+Then commit all changes with git. Stage only the files you modified. Write a clear, descriptive commit message explaining what was improved and why — not just "update bot".
+
+${GOALS}`
 
 function buildAgentCommand() {
   const agent = config.codingAgent || 'opencode'

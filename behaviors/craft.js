@@ -125,6 +125,11 @@ async function craftWoodenTools(bot) {
 
   if (!has(bot, 'wooden_axe') && planks >= 3 && sticks >= 2) {
     await craftItem(bot, 'wooden_axe', 1, table)
+    return
+  }
+
+  if (!has(bot, 'wooden_sword') && planks >= 2 && sticks >= 1) {
+    await craftItem(bot, 'wooden_sword', 1, table)
   }
 }
 
@@ -216,7 +221,7 @@ function canAct(bot, stage) {
 
   switch (stage.id) {
     case 'wooden_tools':
-      return !has(bot, 'wooden_pickaxe') || !has(bot, 'wooden_axe')
+      return !has(bot, 'wooden_pickaxe') || !has(bot, 'wooden_axe') || !has(bot, 'wooden_sword')
     case 'stone_tools':
       return (!has(bot, 'stone_pickaxe') || !has(bot, 'stone_sword')) && count(bot, 'cobblestone') >= 2
     case 'iron_tools':

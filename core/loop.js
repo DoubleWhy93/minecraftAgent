@@ -11,6 +11,45 @@ const posHistory = []
 const POS_HISTORY_SIZE = 8
 const STUCK_DIST_THRESHOLD = 3
 
+const LOG_BLOCKS = ['oak_log','birch_log','spruce_log','jungle_log','acacia_log','dark_oak_log','mangrove_log']
+
+// Determine the current progression stage based on inventory state.
+function getStage(bot) {
+  const has = name => bot.inventory.items().some(i => i.name === name)
+  const count = names => {
+    const list = Array.isArray(names) ? names : [names]
+    return bot.inventory.items().filter(i => list.includes(i.name)).reduce((s, i) => s + i.count, 0)
+  }
+
+  // Stage 1: need wood
+  if (count(LOG_BLOCKS) < 12) return { id: 'gather_wood' }
+
+  // Stage 2: need wooden tools (pickaxe + sword)
+  if (!has('wooden_pickaxe') || !has('wooden_sword')) return { id: 'wooden_tools' }
+
+  // Stage 3: need stone & coal
+  if (count('cobblestone') < 32 || count('coal') < 16) return { id: 'gather_stone' }
+
+  // Stage 4: need stone tools
+  if (!has('stone_pickaxe') || !has('stone_sword')) return { id: 'stone_tools' }
+
+  // Stage 5: need raw iron (count both raw and already-smelted)
+  const rawIron = count(['raw_iron', 'iron_ore', 'deepslate_iron_ore'])
+  if (rawIron + count('iron_ingot') < 24) return { id: 'mine_iron' }
+
+  // Stage 6: smelt iron
+  if (count('iron_ingot') < 16) return { id: 'smelt_iron' }
+
+  // Stage 7: craft iron tools & armor
+  if (!has('iron_pickaxe') || !has('iron_sword') || !has('iron_chestplate') || !has('iron_leggings')) return { id: 'iron_tools' }
+
+  // Stage 8: mine diamonds
+  if (count('diamond') < 8) return { id: 'mine_diamonds' }
+
+  // Stage 9: craft diamond tools
+  return { id: 'diamond_tools' }
+}
+
 function checkStuck(bot, behavior) {
   if (behavior !== 'gather' && behavior !== 'craft') {
     posHistory.length = 0
@@ -55,21 +94,22 @@ async function tick(bot, logPath) {
   if (running) return
   running = true
 
-  let currentBehavior = 'idle'
+  const stage = getStage(bot)
+  let currentBehavior = stage.id
 
   try {
     if (survival.canAct(bot)) {
       currentBehavior = 'survival'
       await survival.act(bot)
-    } else if (craft.canAct(bot)) {
+    } else if (craft.canAct(bot, stage)) {
       currentBehavior = 'craft'
-      await craft.act(bot)
-    } else if (smelt.canAct(bot)) {
+      await craft.act(bot, stage)
+    } else if (smelt.canAct(bot, stage)) {
       currentBehavior = 'smelt'
-      await smelt.act(bot)
-    } else if (gather.canAct(bot)) {
+      await smelt.act(bot, stage)
+    } else if (gather.canAct(bot, stage)) {
       currentBehavior = 'gather'
-      await gather.act(bot)
+      await gather.act(bot, stage)
     }
 
     if (checkStuck(bot, currentBehavior)) {
