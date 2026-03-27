@@ -51,7 +51,7 @@ function getStage(bot) {
 }
 
 function checkStuck(bot, behavior) {
-  if (behavior !== 'gather' && behavior !== 'craft') {
+  if (!['gather', 'craft', 'survival'].includes(behavior)) {
     posHistory.length = 0
     stuckCount = 0
     return false
@@ -83,7 +83,8 @@ async function unstick(bot) {
   const dist = 16 + Math.random() * 16
   const tx = Math.floor(pos.x + Math.cos(angle) * dist)
   const tz = Math.floor(pos.z + Math.sin(angle) * dist)
-  const ty = pos.y < 62 ? Math.floor(pos.y + 20) : Math.floor(pos.y)
+  // When underground, aim upward so the pathfinder can find a surface route
+  const ty = pos.y < 70 ? Math.floor(pos.y + 30) : Math.floor(pos.y)
 
   try {
     await bot.pathfinder.goto(new GoalNear(tx, ty, tz, 3))

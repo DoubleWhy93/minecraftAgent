@@ -84,6 +84,8 @@ async function forage(bot) {
 }
 
 function canAct(bot) {
+  // Critical health always triggers survival regardless of food/mobs
+  if (bot.health <= 8) return true
   // Wider radius catches ranged attackers (skeletons shoot at ~16 blocks)
   if (nearbyHostile(bot, 16).length > 0) return true
   const hasFood = bot.inventory.items().some(i => FOOD_ITEMS.includes(i.name))
@@ -106,60 +108,74 @@ async function act(bot) {
   if (threats.length > 0) {
     // Flee from creepers even when armed — they explode when close
     const hasCreeper = threats.some(t => t.name === 'creeper')
-    if (sword && !hasCreeper) {
-      // Fight the closest threat
+    let needsFlee = !sword || hasCreeper
+
+    if (!needsFlee) {
+      // Fight the closest threat in a tight loop until it's dead or bot health is critical
       const target = threats.reduce((a, b) =>
         a.position.distanceTo(bot.entity.position) <= b.position.distanceTo(bot.entity.position) ? a : b
       )
       try {
         await bot.equip(sword, 'hand')
-        const dist = target.position.distanceTo(bot.entity.position)
-        if (dist > 3) {
-          await bot.pathfinder.goto(new GoalNear(
-            Math.round(target.position.x),
-            Math.round(target.position.y),
-            Math.round(target.position.z),
-            2
-          ))
+        const deadline = Date.now() + 6000
+        while (Date.now() < deadline) {
+          if (!target.isValid) break
+          if (bot.health <= 4) { needsFlee = true; break }
+          const dist = target.position.distanceTo(bot.entity.position)
+          if (dist > 3) {
+            bot.pathfinder.setGoal(new GoalNear(
+              Math.round(target.position.x),
+              Math.round(target.position.y),
+              Math.round(target.position.z),
+              2
+            ))
+            await new Promise(r => setTimeout(r, 300))
+          }
+          bot.attack(target)
+          await new Promise(r => setTimeout(r, 500))
         }
-        bot.attack(target)
-        console.log('[survival] attacking', target.name)
-      } catch (_) {}
-    } else {
-      // No sword or creeper present — flee away from all threats
-      let fx = 0, fz = 0
-      for (const mob of threats) {
-        fx += bot.entity.position.x - mob.position.x
-        fz += bot.entity.position.z - mob.position.z
-      }
-      const len = Math.sqrt(fx * fx + fz * fz) || 1
-      const nx = fx / len
-      const nz = fz / len
-      const fleeX = Math.round(bot.entity.position.x + nx * 32)
-      const fleeZ = Math.round(bot.entity.position.z + nz * 32)
-      let fled = false
-      try {
-        await bot.pathfinder.goto(new GoalXZ(fleeX, fleeZ))
-        fled = true
-      } catch (_) {}
+        bot.pathfinder.stop()
+      } catch (_) { try { bot.pathfinder.stop() } catch (_2) {} }
 
-      if (!fled) {
-        // Pathfinder failed — sprint away manually
-        try {
-          // yaw: atan2(-dx, -dz) points bot in direction (nx, nz)
-          const yaw = Math.atan2(-nx, -nz)
-          await bot.look(yaw, 0, true)
-          bot.setControlState('sprint', true)
-          bot.setControlState('forward', true)
-          bot.setControlState('jump', true)
-          await new Promise(r => setTimeout(r, 2500))
-        } catch (_2) {}
-        bot.setControlState('sprint', false)
-        bot.setControlState('forward', false)
-        bot.setControlState('jump', false)
+      if (!needsFlee) {
+        console.log('[survival] defeated', target.name)
+        return
       }
-      console.log('[survival] fled from', threats.length, 'mob(s)')
+      console.log('[survival] health critical during combat, fleeing')
     }
+
+    // Flee away from all threats (no sword, creeper present, or health critical)
+    let fx = 0, fz = 0
+    for (const mob of threats) {
+      fx += bot.entity.position.x - mob.position.x
+      fz += bot.entity.position.z - mob.position.z
+    }
+    const len = Math.sqrt(fx * fx + fz * fz) || 1
+    const nx = fx / len
+    const nz = fz / len
+    const fleeX = Math.round(bot.entity.position.x + nx * 32)
+    const fleeZ = Math.round(bot.entity.position.z + nz * 32)
+    let fled = false
+    try {
+      await bot.pathfinder.goto(new GoalXZ(fleeX, fleeZ))
+      fled = true
+    } catch (_) {}
+
+    if (!fled) {
+      // Pathfinder failed — sprint away manually
+      try {
+        const yaw = Math.atan2(-nx, -nz)
+        await bot.look(yaw, 0, true)
+        bot.setControlState('sprint', true)
+        bot.setControlState('forward', true)
+        bot.setControlState('jump', true)
+        await new Promise(r => setTimeout(r, 2500))
+      } catch (_2) {}
+      bot.setControlState('sprint', false)
+      bot.setControlState('forward', false)
+      bot.setControlState('jump', false)
+    }
+    console.log('[survival] fled from', threats.length, 'mob(s)')
     return
   }
 

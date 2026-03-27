@@ -95,41 +95,42 @@ async function ensureSticks(bot) {
 // ---- Stage: wooden_tools ----
 
 async function craftWoodenTools(bot) {
-  const logs = count(bot, LOG_BLOCKS)
-  const planks = count(bot, PLANK_NAMES)
-  const sticks = count(bot, 'stick')
-
-  if (logs >= 1 && planks < 8) {
+  // Phase 1: Convert logs to planks — need ~12 planks for table + pickaxe + sword + sticks
+  for (let i = 0; i < 4 && count(bot, PLANK_NAMES) < 12; i++) {
     const logItem = bot.inventory.items().find(i => LOG_BLOCKS.includes(i.name))
-    if (logItem) await craftItem(bot, LOG_TO_PLANK[logItem.name] || 'oak_planks', Math.min(logs, 3), null)
-    return
+    if (!logItem) break
+    await craftItem(bot, LOG_TO_PLANK[logItem.name] || 'oak_planks', 1, null)
   }
 
-  if (!has(bot, 'crafting_table') && planks >= 4) {
-    await craftItem(bot, 'crafting_table', 1, null)
-    return
+  if (count(bot, PLANK_NAMES) < 4) return  // not enough materials
+
+  // Phase 2: Craft crafting_table if not in inventory and none placed nearby
+  if (!has(bot, 'crafting_table') && !bot.findBlock({ matching: b => b.name === 'crafting_table', maxDistance: 32 })) {
+    if (count(bot, PLANK_NAMES) >= 4) {
+      await craftItem(bot, 'crafting_table', 1, null)
+    }
   }
 
-  if (sticks < 4 && planks >= 2) {
+  // Phase 3: Craft sticks
+  for (let i = 0; i < 2 && count(bot, 'stick') < 8 && count(bot, PLANK_NAMES) >= 2; i++) {
+    const before = count(bot, 'stick')
     await craftItem(bot, 'stick', 4, null)
-    return
+    if (count(bot, 'stick') <= before) break
   }
 
+  // Phase 4: Get/place crafting table and craft all tools in one session
   const table = await getTable(bot)
   if (!table) return
 
-  if (!has(bot, 'wooden_pickaxe') && planks >= 3 && sticks >= 2) {
+  if (!has(bot, 'wooden_pickaxe') && count(bot, PLANK_NAMES) >= 3 && count(bot, 'stick') >= 2) {
     await craftItem(bot, 'wooden_pickaxe', 1, table)
-    return
   }
-
-  if (!has(bot, 'wooden_axe') && planks >= 3 && sticks >= 2) {
-    await craftItem(bot, 'wooden_axe', 1, table)
-    return
-  }
-
-  if (!has(bot, 'wooden_sword') && planks >= 2 && sticks >= 1) {
+  // Sword before axe — sword is critical for combat
+  if (!has(bot, 'wooden_sword') && count(bot, PLANK_NAMES) >= 2 && count(bot, 'stick') >= 1) {
     await craftItem(bot, 'wooden_sword', 1, table)
+  }
+  if (!has(bot, 'wooden_axe') && count(bot, PLANK_NAMES) >= 3 && count(bot, 'stick') >= 2) {
+    await craftItem(bot, 'wooden_axe', 1, table)
   }
 }
 

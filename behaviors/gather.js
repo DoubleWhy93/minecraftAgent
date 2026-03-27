@@ -79,7 +79,9 @@ async function goToY(bot, targetY) {
 
 async function gatherWood(bot) {
   const currentY = bot.entity.position.y
-  if (!hasPickaxe(bot) && isCave(bot)) { await surface(bot); return }
+  // Always try to surface when underground — even with a pickaxe, the bot
+  // can't pathfind to tree canopy through solid stone
+  if (isCave(bot)) { await surface(bot); return }
 
   const block = bot.findBlock({
     matching: b => LOG_BLOCKS.includes(b.name),

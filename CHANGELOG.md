@@ -1,5 +1,56 @@
 # Changelog
 
+## 2026-03-27 (session 3)
+
+### behaviors/survival.js — Always trigger survival on critical health (≤8 HP)
+**Problem:** `canAct` only checked health when the bot had food or nearby mobs. At health=1.65 with food=20 and no food items and no visible mobs (e.g. after fall damage), survival never activated. Confirmed in logs line 131: health=1.65, behavior='gather', died 3 ticks later.
+
+**Fix:** Added `if (bot.health <= 8) return true` as the very first check in `canAct`. Critical health always triggers survival regardless of food or mob visibility.
+
+---
+
+### behaviors/survival.js — Combat loop: attack repeatedly instead of once per tick
+**Problem:** Each `act()` call did one `bot.attack()` then returned. With a 3-second tick interval, the bot attacked ~once every 3 seconds. A wooden sword deals ~4 damage/hit against a zombie's 20 HP, requiring 5 hits = 15 seconds of combat. The zombie attacks ~5 times in that window (3-4 damage each = 15-20 damage total), killing the bot.
+
+**Fix:** Combat now runs a tight loop for up to 6 seconds: equip sword, approach mob if needed (non-blocking `setGoal`), attack every 500ms, break if mob is dead or health drops to ≤4. If health drops to ≤4 during combat, `needsFlee` is set and the bot immediately falls through to the flee routine.
+
+---
+
+### behaviors/survival.js — Flee after critical-health combat exit
+**Problem:** When the combat loop broke due to critical health (`needsFlee = true`), the code fell out of the `if (!needsFlee)` branch and hit the outer `return` without executing the flee logic. The bot stood still after near-death combat.
+
+**Fix:** Restructured the threat block: `needsFlee` is shared between the combat and flee sections. After the combat loop, if `needsFlee` is true the code falls through to the shared flee section instead of returning early.
+
+---
+
+### behaviors/craft.js — Batch-craft all wooden tools in one call
+**Problem:** `craftWoodenTools` had early `return` after each crafting step (planks, table, sticks, pickaxe, sword). This meant one tool per tick. After the pickaxe was crafted underground and the bot moved to gather wood, `getTable` could no longer navigate to the placed table (it was underground), so `wooden_sword` was never crafted. Confirmed in logs: pickaxe crafted at line 65, but no wooden_sword until much later.
+
+**Fix:** Removed all the incremental `return` statements. The function now: (1) converts up to 4 logs to planks, (2) crafts a crafting table if none exists nearby, (3) crafts sticks, (4) gets/places the table, then (5) crafts pickaxe, sword, and axe in sequence before returning. All tools are crafted in one `act()` call while the bot is still at the table.
+
+---
+
+### behaviors/gather.js — Always surface from caves when gathering wood
+**Problem:** `gatherWood` only tried to surface if `!hasPickaxe(bot) && isCave(bot)`. A bot with a wooden pickaxe that fell into a cave would NOT surface — it would try to pathfind to tree logs through solid stone, fail silently, and loop. The pathfinder cannot reach treetops at y=68-80 from y=64 through stone even with `canDig` enabled because the target Y is far above.
+
+**Fix:** Removed the `!hasPickaxe` guard. Now `gatherWood` always calls `surface()` when `isCave()` returns true, regardless of tool status.
+
+---
+
+### core/loop.js — Include 'survival' in stuck detection
+**Problem:** `checkStuck` only tracked position history for 'gather' and 'craft' behaviors. When the bot was frozen in 'survival' mode for 20+ minutes underground, the in-loop stuck check never fired and `unstick()` was never called.
+
+**Fix:** Changed the guard to `!['gather', 'craft', 'survival'].includes(behavior)` so `checkStuck` also applies to survival mode.
+
+---
+
+### core/loop.js — Fix underground unstick target Y
+**Problem:** `unstick()` only raised the target Y when `pos.y < 62`. At y=64-69 (common underground positions), `ty` stayed at the bot's current Y, sending the pathfinder to a random lateral point inside solid stone — impossible to navigate to and useless for escaping.
+
+**Fix:** Raised the threshold to `pos.y < 70` and increased the Y offset from +20 to +30. A bot at y=65 now aims for y=95, encouraging the pathfinder to plan an upward route through the cave system to the surface.
+
+---
+
 ## 2026-03-27
 
 ### behaviors/survival.js — Eat rotten_flesh instead of starving
