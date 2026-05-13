@@ -6,5 +6,5 @@
   "logPath": "./logs/gamestate.jsonl",
   "loopIntervalMs": 1000,
   "codingAgent": "cc",
-  "improveOnStartup": true
+  "improveOnStartup": false
 }

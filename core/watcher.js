@@ -3,7 +3,7 @@ const EventEmitter = require('events')
 
 // 20 entries × 3 s loop interval = 60 s — must match the buffer size below
 const STUCK_THRESHOLD = 20
-const TIMER_INTERVAL_MS = 10 * 60 * 1000 // 10 minutes
+const TIMER_INTERVAL_MS = 20 * 60 * 1000 // 20 minutes
 
 class Watcher extends EventEmitter {
   constructor(logPath) {
@@ -52,8 +52,12 @@ class Watcher extends EventEmitter {
   }
 
   _onEntry(entry) {
-    this.recentEntries.push(entry)
-    if (this.recentEntries.length > STUCK_THRESHOLD) this.recentEntries.shift()
+    // Only track snapshot entries (those with position) — console log entries
+    // have no position field and would corrupt the stuck position check.
+    if (entry.position) {
+      this.recentEntries.push(entry)
+      if (this.recentEntries.length > STUCK_THRESHOLD) this.recentEntries.shift()
+    }
 
     // Death trigger
     if (entry.health <= 0) {
@@ -62,12 +66,13 @@ class Watcher extends EventEmitter {
       return
     }
 
-    // Stuck trigger — any behavior that should involve movement
-    const movingBehaviors = ['gather', 'survival', 'smelt']
+    // Stuck trigger — any behavior that should involve movement.
+    // 'smelt' is intentionally excluded: smelting is stationary (12 s/item) and
+    // would always fire a false stuck trigger before the batch completes.
+    const movingBehaviors = ['gather', 'survival']
     if (movingBehaviors.includes(entry.currentBehavior) && this.recentEntries.length >= STUCK_THRESHOLD) {
-      const recent = this.recentEntries.slice(-STUCK_THRESHOLD)
-      const first = recent[0].position
-      const allSame = recent.every(e =>
+      const first = this.recentEntries[0].position
+      const allSame = this.recentEntries.every(e =>
         Math.abs(e.position.x - first.x) <= 2 &&
         Math.abs(e.position.z - first.z) <= 2
       )

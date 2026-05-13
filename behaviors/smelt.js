@@ -16,7 +16,8 @@ function has(bot, name) {
 function canAct(bot, stage) {
   if (!stage || stage.id !== 'smelt_iron') return false
   const rawIron = count(bot, ['raw_iron','iron_ore','deepslate_iron_ore'])
-  return rawIron >= 1 && count(bot, 'coal') >= 1
+  const hasFuel = count(bot, ['coal', 'charcoal']) >= 1
+  return rawIron >= 1 && hasFuel
 }
 
 async function craftFurnace(bot) {
@@ -102,7 +103,9 @@ async function smeltBatch(bot, furnaceBlock) {
     furnace = await bot.openFurnace(furnaceBlock)
 
     const inputItem = bot.inventory.items().find(i => ['raw_iron','iron_ore','deepslate_iron_ore'].includes(i.name))
-    const fuelItem = bot.inventory.items().find(i => i.name === 'coal')
+    // Prefer coal, fall back to charcoal (same burn time: 8 items per unit)
+    const fuelItem = bot.inventory.items().find(i => i.name === 'coal') ||
+                     bot.inventory.items().find(i => i.name === 'charcoal')
 
     if (!inputItem) { console.log('[smelt] no iron to smelt'); return }
     if (!fuelItem) { console.log('[smelt] no coal for fuel'); return }
@@ -121,9 +124,16 @@ async function smeltBatch(bot, furnaceBlock) {
     while (totalSmelted < totalItems && Date.now() < deadline) {
       // Wait for the next output item to appear
       await new Promise((resolve, reject) => {
-        const t = setTimeout(() => reject(new Error('item timeout')), 15000)
+        const t = setTimeout(() => {
+          furnace.removeListener('update', check)
+          reject(new Error('item timeout'))
+        }, 15000)
         const check = () => {
-          if (furnace.outputItem()) { clearTimeout(t); resolve() }
+          if (furnace.outputItem()) {
+            clearTimeout(t)
+            furnace.removeListener('update', check)
+            resolve()
+          }
         }
         furnace.on('update', check)
         check()
@@ -140,11 +150,16 @@ async function smeltBatch(bot, furnaceBlock) {
     }
 
     console.log(`[smelt] batch complete: ${totalSmelted} ingots`)
+    // Recover any unburned fuel left in the fuel slot
+    try {
+      if (furnace.fuelItem()) await furnace.takeFuel()
+    } catch (_) {}
   } catch (err) {
     console.error('[smelt] error:', err.message)
     // Grab any output that already finished before the error
     if (furnace) {
       try { await furnace.takeOutput() } catch (_) {}
+      try { if (furnace.fuelItem()) await furnace.takeFuel() } catch (_) {}
     }
   } finally {
     if (furnace) furnace.close()

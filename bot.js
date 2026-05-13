@@ -1,9 +1,14 @@
+const fs = require('fs')
 const mineflayer = require('mineflayer')
 const { pathfinder, Movements } = require('mineflayer-pathfinder')
 const { mineflayer: mineflayerViewer } = require('prismarine-viewer')
+const path = require('path')
 const config = require('./config.json')
 const loop = require('./core/loop')
 const { initConsoleCapture } = require('./core/logger')
+const screenshot = require('./core/screenshot')
+
+const SCREENSHOT_PATH = path.resolve(__dirname, 'logs/latest_view.png')
 
 initConsoleCapture(config.logPath)
 
@@ -43,12 +48,29 @@ bot.once('spawn', () => {
 
   console.log(`[bot] spawned as ${bot.username} on ${config.host}:${config.port}`)
   loop.start(bot, config)
+
+  const SCREENSHOT_DIR = path.resolve(__dirname, 'logs/screenshots')
+  const MAX_SCREENSHOTS = 50
+  fs.mkdirSync(SCREENSHOT_DIR, { recursive: true })
+
+  setInterval(() => {
+    const ts = new Date().toISOString().replace(/[:.]/g, '-')
+    const outPath = path.join(SCREENSHOT_DIR, `${ts}.png`)
+    screenshot.capture(bot, outPath)
+    try { fs.copyFileSync(outPath, SCREENSHOT_PATH) } catch (_) {}
+
+    try {
+      const files = fs.readdirSync(SCREENSHOT_DIR).filter(f => f.endsWith('.png')).sort()
+      for (const old of files.slice(0, Math.max(0, files.length - MAX_SCREENSHOTS))) {
+        try { fs.unlinkSync(path.join(SCREENSHOT_DIR, old)) } catch (_) {}
+      }
+    } catch (_) {}
+  }, 20000)
 })
 
 bot.on('death', () => {
   console.log('[bot] died, respawning...')
-  const fs = require('fs')
-  const path = require('path')
+  screenshot.capture(bot, SCREENSHOT_PATH)
   const entry = {
     timestamp: new Date().toISOString(),
     health: 0,

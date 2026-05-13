@@ -24,6 +24,18 @@ const ARMOR_PIECES = [
 // Cooldown prevents re-triggering forage every tick when there's nothing to eat.
 let forageCooldownUntil = 0
 
+// Returns the best food item available, respecting priority order.
+// Rotten flesh is skipped unless food is critically low (< 10) to avoid
+// the Hunger debuff cycling with the eat trigger at food < 18.
+function bestFood(bot) {
+  for (const fname of FOOD_ITEMS) {
+    if (fname === 'rotten_flesh' && bot.food >= 10) continue
+    const item = bot.inventory.items().find(i => i.name === fname)
+    if (item) return item
+  }
+  return null
+}
+
 function nearbyHostile(bot, radius) {
   return Object.values(bot.entities).filter(e =>
     e.type === 'mob' && HOSTILE_MOBS.has(e.name) &&
@@ -55,32 +67,65 @@ async function wearArmor(bot) {
   }
 }
 
+const PASSIVE_MOBS = ['cow', 'pig', 'chicken', 'sheep', 'rabbit']
+
+async function huntAnimal(bot) {
+  const { GoalNear } = require('mineflayer-pathfinder').goals
+  const animal = Object.values(bot.entities).find(e =>
+    e.type === 'mob' && PASSIVE_MOBS.includes(e.name) &&
+    e.position.distanceTo(bot.entity.position) < 32
+  )
+  if (!animal) return false
+
+  const sword = getBestSword(bot)
+  if (sword) { try { await bot.equip(sword, 'hand') } catch (_) {} }
+
+  try {
+    await bot.pathfinder.goto(new GoalNear(
+      Math.round(animal.position.x), Math.round(animal.position.y), Math.round(animal.position.z), 2
+    ))
+    if (animal.isValid) {
+      bot.attack(animal)
+      await new Promise(r => setTimeout(r, 500))
+    }
+    console.log('[survival] attacked', animal.name, 'for food')
+    return true
+  } catch (_) {
+    return false
+  }
+}
+
 // Forage for sweet berry bushes — common in taiga/snowy biomes.
+// Falls back to hunting a nearby passive mob if no bushes are found.
 async function forage(bot) {
   const { GoalGetToBlock, GoalNear } = require('mineflayer-pathfinder').goals
   const bush = bot.findBlock({
     matching: b => b.name === 'sweet_berry_bush',
     maxDistance: 128
   })
-  if (!bush) {
-    // No berry bushes found — explore to find food sources
-    console.log('[survival] hungry but no berry bushes nearby, exploring...')
-    const pos = bot.entity.position
-    const angle = Math.random() * 2 * Math.PI
-    const tx = Math.floor(pos.x + Math.cos(angle) * 32)
-    const tz = Math.floor(pos.z + Math.sin(angle) * 32)
+  if (bush) {
     try {
-      await bot.pathfinder.goto(new GoalNear(tx, pos.y, tz, 3))
-    } catch (_) {}
-    return
+      await bot.pathfinder.goto(new GoalGetToBlock(bush.position.x, bush.position.y, bush.position.z))
+      await bot.dig(bush)
+      console.log('[survival] foraged sweet berries')
+      return
+    } catch (err) {
+      console.log('[survival] could not reach berry bush:', err.message)
+    }
   }
+
+  // Try hunting a nearby passive mob (cow, pig, chicken, etc.)
+  if (await huntAnimal(bot)) return
+
+  // Nothing found — explore to find food sources
+  console.log('[survival] hungry but no food sources nearby, exploring...')
+  const pos = bot.entity.position
+  const angle = Math.random() * 2 * Math.PI
+  const tx = Math.floor(pos.x + Math.cos(angle) * 32)
+  const tz = Math.floor(pos.z + Math.sin(angle) * 32)
   try {
-    await bot.pathfinder.goto(new GoalGetToBlock(bush.position.x, bush.position.y, bush.position.z))
-    await bot.dig(bush)
-    console.log('[survival] foraged sweet berries')
-  } catch (err) {
-    console.log('[survival] could not reach berry bush:', err.message)
-  }
+    await bot.pathfinder.goto(new GoalNear(tx, pos.y, tz, 3))
+  } catch (_) {}
 }
 
 function canAct(bot) {
@@ -88,9 +133,8 @@ function canAct(bot) {
   if (bot.health <= 8) return true
   // Wider radius catches ranged attackers (skeletons shoot at ~16 blocks)
   if (nearbyHostile(bot, 16).length > 0) return true
-  const hasFood = bot.inventory.items().some(i => FOOD_ITEMS.includes(i.name))
-  // Proactively eat only when we actually have food — avoids infinite loop when hungry but foodless
-  if (hasFood && (bot.food < 18 || bot.health < 16)) return true
+  // Proactively eat only when we have food worth eating at this level
+  if (bestFood(bot) !== null && (bot.food < 18 || bot.health < 16)) return true
   // Critical starvation — forage, but use a cooldown so we don't block gather/craft forever
   if (bot.food < 6 && Date.now() > forageCooldownUntil) return true
   return false
@@ -188,7 +232,7 @@ async function act(bot) {
 
   // No threats — eat to restore food/health
   if (bot.food < 18 || bot.health < 16) {
-    const food = bot.inventory.items().find(i => FOOD_ITEMS.includes(i.name))
+    const food = bestFood(bot)
     if (food) {
       try {
         await bot.equip(food, 'hand')

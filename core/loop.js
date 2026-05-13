@@ -1,11 +1,16 @@
+const path = require('path')
 const survival = require('../behaviors/survival')
 const craft = require('../behaviors/craft')
 const gather = require('../behaviors/gather')
 const smelt = require('../behaviors/smelt')
 const logger = require('./logger')
+const screenshot = require('./screenshot')
+
+const SCREENSHOT_PATH = path.resolve(__dirname, '../logs/latest_view.png')
 
 let running = false
 let stuckCount = 0
+let lastInventoryCount = -1
 
 const posHistory = []
 const POS_HISTORY_SIZE = 8
@@ -54,12 +59,23 @@ function checkStuck(bot, behavior) {
   if (!['gather', 'craft', 'survival'].includes(behavior)) {
     posHistory.length = 0
     stuckCount = 0
+    lastInventoryCount = -1
     return false
   }
 
   const pos = bot.entity.position
   posHistory.push({ x: pos.x, z: pos.z })
   if (posHistory.length > POS_HISTORY_SIZE) posHistory.shift()
+
+  // If inventory changed the bot is making progress (mining, crafting, eating) — not stuck.
+  // This prevents false positives when the bot mines in one spot for several ticks.
+  const invCount = bot.inventory.items().reduce((s, i) => s + i.count, 0)
+  if (lastInventoryCount !== -1 && invCount !== lastInventoryCount) {
+    stuckCount = 0
+    lastInventoryCount = invCount
+    return false
+  }
+  lastInventoryCount = invCount
 
   if (posHistory.length >= POS_HISTORY_SIZE) {
     const first = posHistory[0]
@@ -190,6 +206,7 @@ async function tick(bot, logPath) {
     }
 
     if (checkStuck(bot, currentBehavior)) {
+      screenshot.capture(bot, SCREENSHOT_PATH)
       await unstick(bot)
     }
   } catch (err) {

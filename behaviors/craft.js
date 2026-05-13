@@ -97,7 +97,7 @@ async function ensureSticks(bot) {
 async function craftWoodenTools(bot) {
   // Phase 1: Convert logs to planks — need ~12 planks for table + pickaxe + sword + sticks
   for (let i = 0; i < 4 && count(bot, PLANK_NAMES) < 12; i++) {
-    const logItem = bot.inventory.items().find(i => LOG_BLOCKS.includes(i.name))
+    const logItem = bot.inventory.items().find(item => LOG_BLOCKS.includes(item.name))
     if (!logItem) break
     await craftItem(bot, LOG_TO_PLANK[logItem.name] || 'oak_planks', 1, null)
   }
@@ -151,6 +151,11 @@ async function craftStoneTools(bot) {
 
   if (!has(bot, 'stone_sword') && cobble >= 2) {
     await craftItem(bot, 'stone_sword', 1, table)
+    return
+  }
+
+  if (!has(bot, 'stone_axe') && cobble >= 3) {
+    await craftItem(bot, 'stone_axe', 1, table)
   }
 }
 
@@ -224,7 +229,7 @@ function canAct(bot, stage) {
     case 'wooden_tools':
       return !has(bot, 'wooden_pickaxe') || !has(bot, 'wooden_axe') || !has(bot, 'wooden_sword')
     case 'stone_tools':
-      return (!has(bot, 'stone_pickaxe') || !has(bot, 'stone_sword')) && count(bot, 'cobblestone') >= 2
+      return (!has(bot, 'stone_pickaxe') || !has(bot, 'stone_sword') || !has(bot, 'stone_axe')) && count(bot, 'cobblestone') >= 2
     case 'iron_tools':
       return count(bot, 'iron_ingot') >= 2
     case 'diamond_tools':

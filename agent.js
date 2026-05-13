@@ -6,9 +6,16 @@ const Watcher = require('./core/watcher')
 
 const PROJECT_PATH = __dirname
 const LOG_PATH = path.resolve(PROJECT_PATH, config.logPath)
+const SCREENSHOT_PATH = path.resolve(PROJECT_PATH, 'logs/latest_view.png')
 const GOALS = fs.readFileSync(path.join(PROJECT_PATH, 'GOALS.md'), 'utf8')
-const PROMPT = `Improve the Minecraft survival bot located at ${PROJECT_PATH}. Read logs/gamestate.jsonl for recent performance data and improve the behavior files (behaviors/ and core/loop.js) to help the bot survive and progress through the game.
 
+function buildPrompt() {
+  const screenshotLine = fs.existsSync(SCREENSHOT_PATH)
+    ? `\nAn overhead minimap of the bot's surroundings at the time of the last trigger is saved at ${SCREENSHOT_PATH} — use your Read tool to view it as visual context before making decisions.\n`
+    : ''
+
+  return `Improve the Minecraft survival bot located at ${PROJECT_PATH}. Read logs/gamestate.jsonl for recent performance data and improve the behavior files (behaviors/ and core/loop.js) to help the bot survive and progress through the game.
+${screenshotLine}
 Do not ask clarifying questions. Do not wait for input. Read the code, identify problems, make decisions, and fix them. If something is ambiguous, pick the most sensible option and implement it.
 
 After making changes, append an entry to CHANGELOG.md in the project root. Include the date, a short description of each change, what problem it fixed, and the strategy behind the change — explain the reasoning, not just what was done.
@@ -16,13 +23,15 @@ After making changes, append an entry to CHANGELOG.md in the project root. Inclu
 Then commit all changes with git. Stage only the files you modified. Write a clear, descriptive commit message explaining what was improved and why — not just "update bot".
 
 ${GOALS}`
+}
 
 function buildAgentCommand() {
+  const prompt = buildPrompt()
   const agent = config.codingAgent || 'opencode'
   if (agent === 'cc' || agent === 'claude') {
-    return { cmd: 'claude', args: ['-p', PROMPT, '--verbose', '--dangerously-skip-permissions'] }
+    return { cmd: 'claude', args: ['-p', prompt, '--verbose', '--dangerously-skip-permissions'], shell: true }
   }
-  return { cmd: 'opencode', args: ['run', PROMPT] }
+  return { cmd: 'opencode', args: ['run', prompt], shell: true }
 }
 
 let botProcess = null
@@ -62,18 +71,22 @@ async function runImprovement(reason) {
 
   await stopBot()
 
-  const { cmd, args } = buildAgentCommand()
+  const { cmd, args, shell } = buildAgentCommand()
   console.log(`[agent] running ${cmd}...`)
   const oc = spawn(cmd, args, {
     cwd: PROJECT_PATH,
-    stdio: ['ignore', 'inherit', 'inherit']
+    stdio: ['ignore', 'inherit', 'inherit'],
+    shell: shell || false
   })
 
-  oc.on('exit', (code) => {
-    console.log(`[agent] ${cmd} exited with code ${code}`)
+  const finish = (label) => {
+    console.log(`[agent] ${cmd} ${label}`)
     improving = false
     startBot()
-  })
+  }
+
+  oc.on('exit', (code) => finish(`exited with code ${code}`))
+  oc.on('error', (err) => finish(`failed to start: ${err.message}`))
 }
 
 // Ensure logs dir exists
@@ -91,4 +104,4 @@ if (config.improveOnStartup !== false) {
   startBot()
 }
 
-console.log('[agent] running. Bot will auto-improve on death, being stuck, or every 10 minutes.')
+console.log('[agent] running. Bot will auto-improve on death, being stuck, or every 20 minutes.')
